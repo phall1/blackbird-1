@@ -23,6 +23,18 @@
       }
     },
     {
+      "name": "dev",
+      "displayName": "Portable debug (any LLVM 23 on PATH or Homebrew)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BLACKBIRD_INSTRUMENTATION": "none",
+        "BLACKBIRD_DEBUG": "ON"
+      }
+    },
+    {
       "name": "release",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
@@ -77,6 +89,10 @@
       "configurePreset": "debug"
     },
     {
+      "name": "dev",
+      "configurePreset": "dev"
+    },
+    {
       "name": "release",
       "configurePreset": "release"
     },
@@ -101,6 +117,16 @@
     {
       "name": "debug",
       "configurePreset": "debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "dev",
+      "configurePreset": "dev",
       "output": {
         "outputOnFailure": true
       },

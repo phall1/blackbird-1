@@ -43,6 +43,16 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
+# Replace a symlink to a directory atomically, choosing the flag by mv flavour
+# rather than OS: GNU mv (Linux, and macOS with Homebrew coreutils on PATH)
+# spells it -T, BSD mv spells it -h.
+blackbird_replace_symlink() {
+  if mv --version >/dev/null 2>&1; then
+    mv -fT -- "$1" "$2"
+  else
+    mv -fh -- "$1" "$2"
+  fi
+}
 blackbird_validate_version() {
   bb_v=$1
   case "$bb_v" in
@@ -466,13 +476,7 @@ blackbird_launcher=''
 
 blackbird_link=$blackbird_home/.current-$$
 ln -s -- "$blackbird_generation" "$blackbird_link"
-case "$blackbird_os" in
-  Darwin) mv -fh -- "$blackbird_link" "$blackbird_home/current" ;;
-  Linux) mv -fT -- "$blackbird_link" "$blackbird_home/current" ;;
-  *)
-    printf 'Atomic install currently supports macOS and Linux.\n' >&2
-    exit 1 ;;
-esac
+blackbird_replace_symlink "$blackbird_link" "$blackbird_home/current"
 blackbird_link=''
 blackbird_activated=true
 

@@ -13,6 +13,53 @@ Blackbird is built for operators who want full control over the machine, program
 
 ---
 
+## Install
+
+One command from a fresh shell. Pick the row that matches your machine.
+
+| You have | Run | You get |
+| --- | --- | --- |
+| macOS arm64 or Linux x86_64 | `curl -fsSL https://raw.githubusercontent.com/antimemeai/blackbird/master/scripts/install-release.sh \| sh` | The SHA-256-verified prebuilt release at `~/.local/bin/blackbird` |
+| Nix | `nix profile install github:antimemeai/blackbird` | A source build on `PATH` (any macOS or Linux) |
+| Nix, just trying it | `nix run github:antimemeai/blackbird` | A source build, run once, nothing installed (`#blackbird-bin` for the prebuilt) |
+
+Then:
+
+```sh
+blackbird auth providers   # which providers have credentials
+blackbird                  # start a session
+```
+
+### From a checkout
+
+```sh
+git clone https://github.com/antimemeai/blackbird && cd blackbird
+```
+
+| Toolchain | Build and install | Develop |
+| --- | --- | --- |
+| Nix | `nix build` → `./result/bin/blackbird` | `nix develop`, or `direnv allow` once |
+| mise | `mise install && mise run deps && mise run install` | `mise run build` · `mise run test` · `mise run run` |
+| Homebrew / apt | `scripts/bootstrap && scripts/install-blackbird` | `cmake --preset dev && cmake --build --preset dev` |
+
+A source build needs LLVM Clang 23 with libc++, Lua 5.5.1, OpenSSL 3, CMake ≥ 3.28,
+Ninja and Python 3; Cargo is optional and adds the iroh P2P transport.
+`scripts/bootstrap --check` reports what is missing and changes nothing;
+`scripts/bootstrap` installs it with Homebrew on macOS, or apt (with apt.llvm.org and a
+checksum-verified Lua build) on Debian and Ubuntu. Nix needs none of this.
+
+Nix, direnv and mise are all opt-in. `.envrc` does nothing until you `direnv allow`;
+it then loads the Nix dev shell if Nix is installed, otherwise mise's tools.
+
+`scripts/install-blackbird` builds the `release` preset, smoke-checks it offline and
+atomically activates a new generation under `~/.local/lib/blackbird/` (`--prefix DIR`
+to put it elsewhere). `--update`, `--list`, `--rollback [GEN]` and `--prune [--keep N]`
+manage generations; see [`docs/INSTALLING.md`](docs/INSTALLING.md). Contributors:
+`scripts/rigor` is the exact-version qualification gate behind the pre-commit hook;
+see [`tooling/README.md`](tooling/README.md).
+
+---
+
 ## What Blackbird Is Today
 
 ### Native Core & Programmable Lua Turn Loops
@@ -71,51 +118,6 @@ blackbird metrics       # Tertiary read-only usage summary and sparklines
 
 ---
 
-## Build & Install
-
-### Prerequisites
-- **Compiler:** C++23 LLVM Clang — **Clang 23.1.2** on macOS (Homebrew LLVM), or **Clang 23.1.3 + libc++ 23.1.3** on Linux.
-- **Runtime & build tools:** **Lua 5.5.1**, CMake, Ninja, and system `curl`.
-
-The `release` CMake preset is portable across macOS and Linux and auto-discovers LLVM Clang unless `CXX` is set explicitly.
-
-### Managed Local Install (Recommended)
-
-```sh
-./scripts/install-blackbird
-blackbird --help
-blackbird auth providers
-blackbird
-```
-
-This builds the `release` preset, runs offline packaging smoke checks, and atomically activates the new generation under `~/.local/lib/blackbird/releases/` (symlinked at `~/.local/bin/blackbird`; pass `--prefix DIR` to install elsewhere).
-
-Manage installed generations:
-
-```sh
-./scripts/install-blackbird --update                 # Rebuild and atomically switch current
-./scripts/install-blackbird --list                   # List installed generations (* = active)
-./scripts/install-blackbird --rollback [GENERATION]  # Atomically roll back to a prior generation
-./scripts/install-blackbird --prune [--keep N]       # Remove older generations (default keep: 3)
-```
-
-### Checkout Build & Run
-
-```sh
-scripts/rigor doctor
-scripts/rigor build release
-cmake --build build/release --target blackbird
-BLACKBIRD_EXECUTABLE="$PWD/build/release/blackbird" ./scripts/blackbird
-```
-
-Run inside a persistent `phux` pane:
-
-```sh
-./scripts/blackbird-phux blackbird
-```
-
----
-
 ## Quick Usage
 
 ```sh
@@ -132,6 +134,9 @@ blackbird --provider anthropic --model claude-sonnet-4-6 --effort high
 blackbird --list-sessions
 blackbird --session ~/.local/state/blackbird/session-XXXXXX
 ```
+
+Run inside a persistent [`phux`](docs/PHUX.md) pane with `./scripts/blackbird-phux blackbird`.
+From a checkout, run a dev build with `BLACKBIRD_EXECUTABLE="$PWD/build/dev/blackbird" ./scripts/blackbird`.
 
 Essential TUI keys: `Enter` submits (or queues during a turn), `Shift-Enter` / `Alt-Enter` / `Ctrl-J` inserts a newline, `Ctrl-C` stops the active turn while preserving your draft, `Ctrl-Q` exits with recoverable drafts, `Ctrl-\` opens `/views`, `Ctrl-O` toggles `/jobs`, and `Ctrl-X` toggles `/center`.
 

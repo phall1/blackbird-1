@@ -13,10 +13,13 @@ This host already includes `~/.local/bin` on `PATH`. Another host can select a
 prefix with `--prefix DIRECTORY` and add its `bin` directory to `PATH`. The script
 prints the installed command location; it never edits shell configuration.
 `CMAKE=/absolute/path/to/cmake` selects the CMake executable. The repository's
-portable `release` preset builds with Ninja and auto-discovers the qualified LLVM
-Clang compiler on macOS (Homebrew LLVM 23.1.2) and Linux (`clang++` 23.1.3 with
-libc++ 23.1.3) unless `CXX` is set explicitly; the script does not install a compiler,
-libraries or other dependencies.
+portable `release` preset builds with Ninja and auto-discovers LLVM Clang 23 on
+macOS (Homebrew `llvm`) and Linux (`clang++-23` or `clang++`, with libc++) unless
+`CXX` is set explicitly. The installer itself does not install a compiler or
+libraries: `scripts/bootstrap --check` reports what is missing, `scripts/bootstrap`
+installs it (Homebrew or apt), and `nix build` / `nix develop` provide everything
+without touching the host. The exact qualified patch releases remain pinned by
+`scripts/rigor` ([tooling/README.md](../tooling/README.md)).
 
 To build and activate the current local source again:
 

@@ -1,0 +1,44 @@
+# Opt-in toolchain and task runner (https://mise.jdx.dev). Nothing requires it.
+#
+#   mise install          # cmake, ninja, python, rust
+#   mise run deps         # LLVM 23, Lua 5.5.1, OpenSSL 3 via Homebrew/apt
+#   mise run install      # build, smoke-check, activate ~/.local/bin/blackbird
+#
+# C/C++ libraries are not mise's job; scripts/bootstrap installs them, and
+# `nix develop` provides everything at once.
+
+[tools]
+cmake = "4.5"
+ninja = "1.13"
+python = "3.13"
+rust = "stable" # cargo builds the optional iroh P2P transport
+
+[tasks.doctor]
+description = "Report missing build prerequisites"
+run = "scripts/bootstrap --check"
+
+[tasks.deps]
+description = "Install LLVM 23, Lua 5.5.1 and OpenSSL 3 (Homebrew or apt)"
+run = "scripts/bootstrap"
+
+[tasks.build]
+description = "Debug build of everything, tests included (build/dev)"
+run = ["cmake --preset dev", "cmake --build --preset dev"]
+
+[tasks.test]
+description = "Run the debug test suite"
+depends = ["build"]
+run = "ctest --preset dev"
+
+[tasks.release]
+description = "Release build of the blackbird binary (build/release)"
+run = ["cmake --preset release", "cmake --build --preset release --target blackbird"]
+
+[tasks.install]
+description = "Build, smoke-check and atomically activate ~/.local/bin/blackbird"
+run = "scripts/install-blackbird"
+
+[tasks.run]
+description = "Run the checkout's debug build"
+depends = ["build"]
+run = "BLACKBIRD_EXECUTABLE=\"$PWD/build/dev/blackbird\" scripts/blackbird"

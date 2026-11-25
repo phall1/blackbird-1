@@ -11,3 +11,7 @@ __pycache__/
 /compile_commands.json
 /.superpowers/
 /.blackbird/
+/result
+/result-*
+/.direnv/
+/.envrc.local

@@ -50,16 +50,22 @@ while [ "$#" -gt 0 ]; do
 done
 case "$blackbird_jobs" in ''|*[!0-9]*|0) printf 'Jobs must be a positive integer.\n' >&2; exit 2 ;; esac
 case "$blackbird_keep" in ''|*[!0-9]*|0) printf 'Keep count must be a positive integer.\n' >&2; exit 2 ;; esac
+# Replace a symlink to a directory atomically, choosing the flag by mv flavour
+# rather than OS: GNU mv (Linux, and macOS with Homebrew coreutils on PATH)
+# spells it -T, BSD mv spells it -h.
+blackbird_replace_symlink() {
+  if mv --version >/dev/null 2>&1; then
+    mv -fT -- "$1" "$2"
+  else
+    mv -fh -- "$1" "$2"
+  fi
+}
 blackbird_atomic_switch() {
   blackbird_switch_target=$1
   blackbird_switch_link=$blackbird_home/.current-$$
   rm -f -- "$blackbird_switch_link"
   ln -s -- "$blackbird_switch_target" "$blackbird_switch_link"
-  case "$(uname -s)" in
-    Darwin) mv -fh -- "$blackbird_switch_link" "$blackbird_home/current" ;;
-    Linux) mv -fT -- "$blackbird_switch_link" "$blackbird_home/current" ;;
-    *) rm -f -- "$blackbird_switch_link"; printf 'Atomic install currently supports macOS and Linux.\n' >&2; exit 1 ;;
-  esac
+  blackbird_replace_symlink "$blackbird_switch_link" "$blackbird_home/current"
 }
 blackbird_manifest_field() {
   if [ -f "$1/MANIFEST" ]; then
@@ -261,8 +267,12 @@ if [ "$(uname -s)" = Darwin ] && command -v otool >/dev/null 2>&1; then
       */opt/homebrew/*|*/usr/local/*)
         printf 'Refusing non-self-contained binary (%s) with external dylib dependency:\n%s\n' "$blackbird_tool" "$blackbird_dylibs" >&2
         exit 1 ;;
+      */nix/store/*) blackbird_nix_linked=true ;;
     esac
   done
+fi
+if [ "${blackbird_nix_linked:-false}" = true ]; then
+  printf 'Note: this build links Nix store libraries, which nix-collect-garbage may remove.\nFor a GC-rooted install use: nix profile install %s\n' "$blackbird_source" >&2
 fi
 # All smoke state is private and offline. Do not consult the operator's accounts.
 mkdir -m 700 "$blackbird_generation/.smoke"
@@ -327,12 +337,7 @@ mv -f -- "$blackbird_launcher" "$blackbird_prefix/bin/blackbird"
 blackbird_launcher=''
 blackbird_link=$blackbird_home/.current-$$
 ln -s -- "$blackbird_generation" "$blackbird_link"
-# BSD and GNU mv need different flags to replace a symlink to a directory itself.
-case "$(uname -s)" in
-  Darwin) mv -fh -- "$blackbird_link" "$blackbird_home/current" ;;
-  Linux) mv -fT -- "$blackbird_link" "$blackbird_home/current" ;;
-  *) printf 'Atomic install currently supports macOS and Linux.\n' >&2; exit 1 ;;
-esac
+blackbird_replace_symlink "$blackbird_link" "$blackbird_home/current"
 blackbird_link=''
 blackbird_activated=true
 printf 'Installed Blackbird: %s/bin/blackbird\nVersion: %s\nGeneration: %s\nUpdate: %s/scripts/install-blackbird --update --prefix %s\n' \

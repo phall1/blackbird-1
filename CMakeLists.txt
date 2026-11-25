@@ -8,7 +8,7 @@ if(NOT DEFINED CMAKE_C_COMPILER AND NOT DEFINED ENV{CC})
       endif()
     endforeach()
   elseif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
-    find_program(_bb_clang_c clang)
+    find_program(_bb_clang_c NAMES clang-23 clang)
     if(_bb_clang_c)
       set(CMAKE_C_COMPILER "${_bb_clang_c}")
     endif()
@@ -23,7 +23,7 @@ if(NOT DEFINED CMAKE_CXX_COMPILER AND NOT DEFINED ENV{CXX})
       endif()
     endforeach()
   elseif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
-    find_program(_bb_clang clang++)
+    find_program(_bb_clang NAMES clang++-23 clang++)
     if(_bb_clang)
       set(CMAKE_CXX_COMPILER "${_bb_clang}")
     endif()
@@ -38,21 +38,30 @@ else()
 endif()
 set(BLACKBIRD_COMPILER_PROFILE "${BLACKBIRD_DEFAULT_COMPILER_PROFILE}" CACHE STRING "Explicit qualified compiler profile")
 if(BLACKBIRD_COMPILER_PROFILE STREQUAL "macos-llvm23")
-  set(BLACKBIRD_REQUIRED_CLANG "23.1.2")
   if(NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     message(FATAL_ERROR "macos-llvm23 requires its declared Darwin host")
   endif()
 elseif(BLACKBIRD_COMPILER_PROFILE STREQUAL "linux-llvm23")
-  set(BLACKBIRD_REQUIRED_CLANG "23.1.3")
   if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
     message(FATAL_ERROR "linux-llvm23 requires its declared Linux host")
   endif()
 else()
   message(FATAL_ERROR "Unknown compiler profile; refusing fallback")
 endif()
+# Both profiles name the LLVM 23 release series. Point releases (Homebrew,
+# apt.llvm.org and nixpkgs each ship a different 23.1.x) are accepted here; the
+# exact qualified patch release stays pinned by scripts/rigor via
+# tooling/local-profile.json.
+set(BLACKBIRD_REQUIRED_CLANG_MAJOR 23)
 if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR
-   NOT CMAKE_CXX_COMPILER_VERSION VERSION_EQUAL "${BLACKBIRD_REQUIRED_CLANG}")
-  message(FATAL_ERROR "This tooling profile requires LLVM Clang ${BLACKBIRD_REQUIRED_CLANG}")
+   NOT CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "${BLACKBIRD_REQUIRED_CLANG_MAJOR}" OR
+   CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "24")
+  message(FATAL_ERROR
+    "Blackbird requires LLVM Clang ${BLACKBIRD_REQUIRED_CLANG_MAJOR}.x "
+    "(found ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION} at ${CMAKE_CXX_COMPILER}).\n"
+    "  macOS:  scripts/bootstrap   (Homebrew llvm)\n"
+    "  Linux:  scripts/bootstrap   (clang-23 + libc++-23 from apt.llvm.org)\n"
+    "  Any:    nix build")
 endif()
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 23)
@@ -1368,9 +1377,19 @@ if(CMAKE_HOST_APPLE AND NOT DEFINED OPENSSL_ROOT_DIR AND NOT DEFINED ENV{OPENSSL
 endif()
 set(BLACKBIRD_STATIC_OPENSSL "auto" CACHE STRING "Link static libcrypto.a when available: auto (Release on macOS), on, off")
 set_property(CACHE BLACKBIRD_STATIC_OPENSSL PROPERTY STRINGS auto on off)
-if(BLACKBIRD_STATIC_OPENSSL STREQUAL "on" OR
-   (BLACKBIRD_STATIC_OPENSSL STREQUAL "auto" AND NOT BLACKBIRD_DEBUG AND CMAKE_SYSTEM_NAME STREQUAL "Darwin"))
+if(BLACKBIRD_STATIC_OPENSSL STREQUAL "on")
   set(OPENSSL_USE_STATIC_LIBS TRUE)
+elseif(BLACKBIRD_STATIC_OPENSSL STREQUAL "auto" AND NOT BLACKBIRD_DEBUG AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+  # Static only when the selected OpenSSL root ships the archives. A static
+  # search elsewhere could pair these headers with another installation's
+  # libcrypto.a; without archives (e.g. a Nix dev shell) link shared libraries.
+  string(REPLACE ":" ";" _bb_openssl_roots "$ENV{OPENSSL_ROOT_DIR}")
+  foreach(_bb_openssl_root IN LISTS OPENSSL_ROOT_DIR _bb_openssl_roots)
+    if(EXISTS "${_bb_openssl_root}/lib/libcrypto.a" AND EXISTS "${_bb_openssl_root}/lib/libssl.a")
+      set(OPENSSL_USE_STATIC_LIBS TRUE)
+      break()
+    endif()
+  endforeach()
 elseif(NOT BLACKBIRD_STATIC_OPENSSL STREQUAL "off" AND NOT BLACKBIRD_STATIC_OPENSSL STREQUAL "auto")
   message(FATAL_ERROR "BLACKBIRD_STATIC_OPENSSL must be auto, on, or off")
 endif()

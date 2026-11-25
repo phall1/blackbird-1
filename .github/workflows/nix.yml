@@ -1,0 +1,34 @@
+name: Nix
+
+# Proves the zero-setup paths stay zero-setup: the flake builds from source and
+# passes its offline smoke on macOS and Linux, and the dev shell satisfies
+# scripts/bootstrap --check.
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flake:
+    name: nix flake check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/determinate-nix-action@v3
+      - name: Build and smoke-check from source
+        run: nix flake check -L
+      - name: Dev shell provides every prerequisite
+        run: nix develop --command scripts/bootstrap --check

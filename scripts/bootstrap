@@ -1,0 +1,139 @@
+#!/bin/sh
+# Install the system libraries and tools a source build needs, or report what is
+# missing with --check. Nix users need none of this: `nix build` / `nix develop`.
+set -eu
+
+lua_version=5.5.1
+lua_sha256=1c4b4068d67061f2a2231ad2b5422e77acea1487ea9890f6320af614f4373dce
+llvm_major=23
+check_only=false
+
+case "${1:-}" in
+  --check) check_only=true ;;
+  '') ;;
+  -h|--help)
+    printf 'Usage: scripts/bootstrap [--check]\n'
+    printf 'Install (or with --check, report) what a Blackbird source build needs:\n'
+    printf '  LLVM Clang %s + libc++, Lua %s, OpenSSL 3, CMake, Ninja, Python 3, Cargo.\n' "$llvm_major" "$lua_version"
+    printf 'macOS uses Homebrew; Debian/Ubuntu use apt (apt.llvm.org for LLVM) and sudo.\n'
+    exit 0 ;;
+  *) printf 'Unknown option: %s\n' "$1" >&2; exit 2 ;;
+esac
+
+missing=''
+note() { printf '  %-8s %s\n' "$1" "$2"; }
+need() { missing="$missing $1"; note "$1" "missing${2:+ ($2)}"; }
+
+clang_major() { "$1" -dumpversion 2>/dev/null | cut -d. -f1; }
+find_clang() {
+  for c in ${CXX:-} /opt/homebrew/opt/llvm/bin/clang++ /usr/local/opt/llvm/bin/clang++ \
+           "clang++-$llvm_major" clang++; do
+    if command -v "$c" >/dev/null 2>&1 && [ "$(clang_major "$c")" = "$llvm_major" ]; then
+      command -v "$c"; return 0
+    fi
+  done
+  return 1
+}
+find_lua() {
+  for l in lua lua5.5 lua-5.5; do
+    if command -v "$l" >/dev/null 2>&1 && "$l" -v 2>&1 | grep -q "Lua $lua_version"; then
+      command -v "$l"; return 0
+    fi
+  done
+  return 1
+}
+has_openssl3() {
+  # OPENSSL_ROOT_DIR may be a ':'-separated list (the Nix dev shell sets one).
+  for d in $(printf '%s' "${OPENSSL_ROOT_DIR:-}" | tr ':' ' ') \
+           /opt/homebrew/opt/openssl@3 /usr/local/opt/openssl@3 /usr; do
+    [ -f "$d/include/openssl/opensslv.h" ] &&
+      grep -q 'OPENSSL_VERSION_MAJOR *3' "$d/include/openssl/opensslv.h" && { printf '%s\n' "$d"; return 0; }
+  done
+  return 1
+}
+
+report() {
+  missing=''
+  printf 'Blackbird source-build prerequisites:\n'
+  if c=$(find_clang); then note clang "$c ($("$c" -dumpversion))"; else need clang "LLVM $llvm_major"; fi
+  if l=$(find_lua); then note lua "$l"; else need lua "$lua_version"; fi
+  if d=$(has_openssl3); then note openssl "$d"; else need openssl 'OpenSSL 3 headers'; fi
+  for t in cmake ninja python3; do
+    if command -v "$t" >/dev/null 2>&1; then note "$t" "$(command -v "$t")"; else need "$t"; fi
+  done
+  if command -v cargo >/dev/null 2>&1 || [ -x "$HOME/.cargo/bin/cargo" ]; then
+    note cargo 'found (enables iroh P2P transport)'
+  else
+    note cargo 'optional, not found (iroh P2P transport will be left out)'
+  fi
+}
+
+install_macos() {
+  command -v brew >/dev/null 2>&1 || {
+    printf 'Homebrew is required on macOS: https://brew.sh (or use `nix build`).\n' >&2; exit 1; }
+  formulae=''
+  case "$missing" in *clang*) formulae="$formulae llvm" ;; esac
+  case "$missing" in *lua*) formulae="$formulae lua" ;; esac
+  case "$missing" in *openssl*) formulae="$formulae openssl@3" ;; esac
+  case "$missing" in *cmake*) formulae="$formulae cmake" ;; esac
+  case "$missing" in *ninja*) formulae="$formulae ninja" ;; esac
+  case "$missing" in *python3*) formulae="$formulae python" ;; esac
+  [ -z "$formulae" ] || brew install $formulae
+}
+
+install_lua_from_source() {
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' EXIT
+  curl -fsSL --proto '=https' --tlsv1.2 "https://www.lua.org/ftp/lua-$lua_version.tar.gz" -o "$tmp/lua.tar.gz"
+  printf '%s  %s\n' "$lua_sha256" "$tmp/lua.tar.gz" | sha256sum -c -
+  tar -xzf "$tmp/lua.tar.gz" -C "$tmp"
+  make -C "$tmp/lua-$lua_version" linux -j"$(nproc)"
+  sudo make -C "$tmp/lua-$lua_version" install
+}
+
+install_debian() {
+  sudo apt-get update
+  sudo apt-get install -y --no-install-recommends \
+    ca-certificates curl gnupg lsb-release build-essential pkg-config \
+    cmake ninja-build python3 libssl-dev
+  case "$missing" in *clang*)
+    keyring=/usr/share/keyrings/llvm-archive-keyring.gpg
+    codename=$(lsb_release -cs)
+    curl -fsSL --proto '=https' --tlsv1.2 https://apt.llvm.org/llvm-snapshot.gpg.key |
+      sudo gpg --dearmor --yes -o "$keyring"
+    printf 'deb [signed-by=%s] https://apt.llvm.org/%s/ llvm-toolchain-%s-%s main\n' \
+      "$keyring" "$codename" "$codename" "$llvm_major" |
+      sudo tee "/etc/apt/sources.list.d/llvm-$llvm_major.list" >/dev/null
+    sudo apt-get update
+    sudo apt-get install -y --no-install-recommends "clang-$llvm_major" "lld-$llvm_major" \
+      "libc++-$llvm_major-dev" "libc++abi-$llvm_major-dev" "libunwind-$llvm_major-dev"
+    ;;
+  esac
+  case "$missing" in *lua*) install_lua_from_source ;; esac
+}
+
+report
+if [ -z "$missing" ]; then
+  printf 'Ready. Build with: cmake --preset release && cmake --build --preset release\n'
+  exit 0
+fi
+if "$check_only"; then
+  printf 'Missing:%s — run scripts/bootstrap to install, or use `nix build`.\n' "$missing" >&2
+  exit 1
+fi
+
+case "$(uname -s)" in
+  Darwin) install_macos ;;
+  Linux)
+    if command -v apt-get >/dev/null 2>&1; then install_debian
+    else
+      printf 'No installer for this Linux distribution; install the missing items above or use `nix build`.\n' >&2
+      exit 1
+    fi ;;
+  *) printf 'Unsupported host: %s\n' "$(uname -s)" >&2; exit 1 ;;
+esac
+
+printf '\n'
+report
+if [ -n "$missing" ]; then printf 'Still missing:%s\n' "$missing" >&2; exit 1; fi
+printf 'Ready. Build with: cmake --preset release && cmake --build --preset release\n'

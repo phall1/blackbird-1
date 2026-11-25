@@ -80,6 +80,10 @@
             };
             cargoRoot = "crates/blackbird-p2p";
 
+            # The linux-llvm23 profile passes -stdlib=libc++ for distro clang; the
+            # nixpkgs libc++ wrapper already selects it, so the flag reads as unused.
+            env.NIX_CFLAGS_COMPILE = lib.optionalString pkgs.stdenv.hostPlatform.isLinux "-Wno-unused-command-line-argument";
+
             nativeBuildInputs = tc.buildTools ++ [ pkgs.rustPlatform.cargoSetupHook ];
             buildInputs = tc.libs;
 
@@ -207,6 +211,7 @@
               export CC=${tc.stdenv.cc}/bin/clang CXX=${tc.stdenv.cc}/bin/clang++
               export OPENSSL_ROOT_DIR=${pkgs.lib.getDev pkgs.openssl}:${pkgs.lib.getLib pkgs.openssl}
               export LUA_DIR=${pkgs.lua5_5}
+              ${pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''export NIX_CFLAGS_COMPILE="''${NIX_CFLAGS_COMPILE:-} -Wno-unused-command-line-argument"''}
             '';
           };
         }

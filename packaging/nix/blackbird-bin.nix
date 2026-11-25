@@ -8,15 +8,15 @@
   patchelf,
 }:
 let
-  version = "0.8.0";
+  version = "0.8.1";
   sources = {
     aarch64-darwin = {
       target = "darwin-arm64";
-      hash = "sha256-VU99B9KZLUeNfL54JYfWTV24UMzARGozaAofeaOEIok=";
+      hash = "sha256-yMZCBrcE2386IXPMiq5pW7/ClABA3CV4aMoyf7a5Fvs=";
     };
     x86_64-linux = {
       target = "linux-x86_64";
-      hash = "sha256-ydSs/fnJJCKCwT9dwbXA2F4a1Y87NDXyq5pIOSxWTVI=";
+      hash = "sha256-5xq9pVyn6QoPWkaj/Lj+nDfHGzPtBCLlmkywWsaGOYg=";
     };
   };
   system = stdenv.hostPlatform.system;
